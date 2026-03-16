@@ -1,7 +1,8 @@
 [package]
-name = "whostoblame"
-version = "0.1.0"
 edition = "2024"
+name = "whostoblame"
+readme = "README.md"
+version = "0.1.0"
 
 [dependencies]
 regex-lite = { version = "0.1.9" }
