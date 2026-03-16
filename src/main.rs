@@ -63,6 +63,7 @@ fn blame(file_name: String, parser: &Parser) -> Result<UserLines, Box<dyn Error>
     let blame_result = Command::new("git")
         .arg("blame")
         .arg("--porcelain")
+        .arg("--")
         .arg(file_name)
         .output()?
         .stdout;
