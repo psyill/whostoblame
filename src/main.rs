@@ -1,3 +1,5 @@
+#![feature(error_iter)]
+use core::{fmt, str};
 use std::{collections::HashMap, env::args, error::Error, process::Command};
 
 use regex_lite::Regex;
@@ -59,22 +61,55 @@ impl Parser {
     }
 }
 
+#[derive(Debug)]
+struct BlameError {
+    file_name: String,
+    underlying: str::Utf8Error,
+}
+
+impl fmt::Display for BlameError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Failed blaming {}", self.file_name)
+    }
+}
+
+impl std::error::Error for BlameError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.underlying)
+    }
+}
+
 fn blame(file_name: String, parser: &Parser) -> Result<UserLines, Box<dyn Error>> {
     let blame_result = Command::new("git")
         .arg("blame")
         .arg("--porcelain")
         .arg("--")
-        .arg(file_name)
+        .arg(&file_name)
         .output()?
         .stdout;
-    Ok(parser.parse_blame(str::from_utf8(&blame_result)?))
+    Ok(
+        parser.parse_blame(str::from_utf8(&blame_result).map_err(|e| BlameError {
+            file_name,
+            underlying: e,
+        })?),
+    )
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
     let mut user_lines = UserLines::new();
     let parser = Parser::new();
     for file_name in args() {
-        for (user, lines) in blame(file_name, &parser)? {
+        for (user, lines) in blame(file_name, &parser).unwrap_or_else(|e| {
+            for (level, source) in e.sources().enumerate() {
+                eprintln!(
+                    "W:{:indentation$}{source}",
+                    " ",
+                    indentation = 2 * level,
+                    source = source
+                );
+            }
+            UserLines::new()
+        }) {
             *user_lines.entry(user).or_default() += lines;
         }
     }
@@ -84,7 +119,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     for (user, lines) in users_and_lines.iter().take(TOP_USER_COUNT) {
         println!("\t{user} ({lines})");
     }
-    Ok(())
 }
 
 #[cfg(test)]
