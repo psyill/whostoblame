@@ -1,6 +1,6 @@
 #![feature(error_iter)]
 use core::{fmt, str};
-use std::{collections::HashMap, env::args, error::Error, process::Command};
+use std::{cmp::Reverse, collections::HashMap, env::args, error::Error, process::Command};
 
 use regex_lite::Regex;
 
@@ -114,7 +114,8 @@ fn main() {
         }
     }
     let mut users_and_lines: Vec<_> = user_lines.into_iter().collect();
-    users_and_lines.sort_by_key(|(_, lines)| *lines);
+    // Sort the users by number of lines change, descending.
+    users_and_lines.sort_by_key(|(_, lines)| Reverse(*lines));
     println!("Changed lines:");
     for (user, lines) in users_and_lines.iter().take(TOP_USER_COUNT) {
         println!("\t{user} ({lines})");
