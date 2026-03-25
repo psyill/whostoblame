@@ -1,14 +1,11 @@
-#![feature(error_iter)]
 use core::str;
-use std::{
-    borrow::Cow, cmp::Reverse, collections::HashMap, env::args, error::Error, process::Command,
-};
+use std::{borrow::Cow, cmp::Reverse, collections::HashMap, env::args, io, process::Command};
 
 use regex_lite::Regex;
 
 type User = String;
 type UserLines = HashMap<User, u32>;
-const TOP_USER_COUNT: usize = 5;
+const TOP_USER_COUNT: usize = 10;
 
 struct Parser {
     group_header_re: Regex,
@@ -63,7 +60,7 @@ impl Parser {
     }
 }
 
-fn blame(file_name: &str, parser: &Parser) -> Result<UserLines, Box<dyn Error>> {
+fn blame(file_name: &str, parser: &Parser) -> Result<UserLines, io::Error> {
     let blame_result = Command::new("git")
         .arg("blame")
         .arg("--porcelain")
@@ -75,19 +72,12 @@ fn blame(file_name: &str, parser: &Parser) -> Result<UserLines, Box<dyn Error>> 
 }
 
 fn main() {
+    println!("Changed lines:");
     let mut user_lines = UserLines::new();
     let parser = Parser::new();
-    for file_name in args() {
+    for file_name in args().skip(1) {
         for (user, lines) in blame(file_name.as_str(), &parser).unwrap_or_else(|e| {
-            eprintln!("W: failed blaming {file_name}");
-            for (level, source) in e.sources().enumerate() {
-                eprintln!(
-                    "W:{:indentation$}{source}",
-                    " ",
-                    indentation = 2 * level,
-                    source = source
-                );
-            }
+            eprintln!("W: failed blaming {file_name} due to {e}");
             UserLines::new()
         }) {
             *user_lines.entry(user).or_default() += lines;
@@ -96,7 +86,6 @@ fn main() {
     let mut users_and_lines: Vec<_> = user_lines.into_iter().collect();
     // Sort the users by number of lines change, descending.
     users_and_lines.sort_by_key(|(_, lines)| Reverse(*lines));
-    println!("Changed lines:");
     for (user, lines) in users_and_lines.iter().take(TOP_USER_COUNT) {
         println!("\t{user} ({lines})");
     }
