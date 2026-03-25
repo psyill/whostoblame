@@ -1,6 +1,8 @@
 #![feature(error_iter)]
-use core::{fmt, str};
-use std::{cmp::Reverse, collections::HashMap, env::args, error::Error, process::Command};
+use core::str;
+use std::{
+    borrow::Cow, cmp::Reverse, collections::HashMap, env::args, error::Error, process::Command,
+};
 
 use regex_lite::Regex;
 
@@ -31,7 +33,7 @@ impl Parser {
         None
     }
 
-    fn parse_blame(&self, blame: &str) -> UserLines {
+    fn parse_blame(&self, blame: Cow<'_, str>) -> UserLines {
         let mut result = UserLines::new();
         let mut commit_to_user = HashMap::<String, String>::new();
         let mut lines = blame
@@ -61,45 +63,23 @@ impl Parser {
     }
 }
 
-#[derive(Debug)]
-struct BlameError {
-    file_name: String,
-    underlying: str::Utf8Error,
-}
-
-impl fmt::Display for BlameError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Failed blaming {}", self.file_name)
-    }
-}
-
-impl std::error::Error for BlameError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&self.underlying)
-    }
-}
-
-fn blame(file_name: String, parser: &Parser) -> Result<UserLines, Box<dyn Error>> {
+fn blame(file_name: &str, parser: &Parser) -> Result<UserLines, Box<dyn Error>> {
     let blame_result = Command::new("git")
         .arg("blame")
         .arg("--porcelain")
         .arg("--")
-        .arg(&file_name)
+        .arg(file_name)
         .output()?
         .stdout;
-    Ok(
-        parser.parse_blame(str::from_utf8(&blame_result).map_err(|e| BlameError {
-            file_name,
-            underlying: e,
-        })?),
-    )
+    Ok(parser.parse_blame(String::from_utf8_lossy(&blame_result)))
 }
 
 fn main() {
     let mut user_lines = UserLines::new();
     let parser = Parser::new();
     for file_name in args() {
-        for (user, lines) in blame(file_name, &parser).unwrap_or_else(|e| {
+        for (user, lines) in blame(file_name.as_str(), &parser).unwrap_or_else(|e| {
+            eprintln!("W: failed blaming {file_name}");
             for (level, source) in e.sources().enumerate() {
                 eprintln!(
                     "W:{:indentation$}{source}",
@@ -157,7 +137,7 @@ filename Cargo.toml
     #[test]
     fn test_parse_simple_blame() {
         let parser = Parser::new();
-        let user_lines: UserLines = parser.parse_blame(TEST_BLAME_OUTPUT);
+        let user_lines: UserLines = parser.parse_blame(Cow::Borrowed(TEST_BLAME_OUTPUT));
         assert_eq!(
             user_lines.len(),
             1,
