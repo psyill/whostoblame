@@ -97,8 +97,10 @@ mod test {
 
     use super::*;
 
-    /// This blame output was generated for real by Git.
-    const TEST_BLAME_OUTPUT: &str = r#"492c3466109b3816aaf568bd947b1a01ac452c37 1 1 6
+    #[test]
+    fn test_parse_simple_blame() {
+        /// This blame output was generated for real by Git.
+        const TEST_BLAME_OUTPUT: &str = r#"492c3466109b3816aaf568bd947b1a01ac452c37 1 1 6
 author Hans Ellegård
 author-mail <psyill.net@gmail.com>
 author-time 1772996316
@@ -123,8 +125,6 @@ filename Cargo.toml
 	[dependencies]
 "#;
 
-    #[test]
-    fn test_parse_simple_blame() {
         let parser = Parser::new();
         let user_lines: UserLines = parser.parse_blame(Cow::Borrowed(TEST_BLAME_OUTPUT));
         assert_eq!(
