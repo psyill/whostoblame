@@ -3,8 +3,14 @@ use std::{borrow::Cow, cmp::Reverse, collections::HashMap, env::args, io, proces
 
 use regex_lite::Regex;
 
+#[cfg(feature = "parallelization")]
+use rayon::prelude::*;
+#[cfg(feature = "parallelization")]
+use std::sync::mpsc::channel;
+
 type User = String;
-type UserLines = HashMap<User, u32>;
+type Lines = u32;
+type UserLines = HashMap<User, Lines>;
 const TOP_USER_COUNT: usize = 10;
 
 struct Parser {
@@ -71,18 +77,47 @@ fn blame(file_name: &str, parser: &Parser) -> Result<UserLines, io::Error> {
     Ok(parser.parse_blame(String::from_utf8_lossy(&blame_result)))
 }
 
-fn main() {
-    println!("Changed lines:");
+#[cfg(not(feature = "parallelization"))]
+fn acquire_user_lines(parser: &Parser) -> UserLines {
     let mut user_lines = UserLines::new();
-    let parser = Parser::new();
-    for file_name in args().skip(1) {
-        for (user, lines) in blame(file_name.as_str(), &parser).unwrap_or_else(|e| {
+    args().skip(1).for_each(|file_name| {
+        for (user, lines) in blame(file_name.as_str(), parser).unwrap_or_else(|e| {
             eprintln!("W: failed blaming {file_name} due to {e}");
             UserLines::new()
         }) {
             *user_lines.entry(user).or_default() += lines;
         }
+    });
+    user_lines
+}
+
+#[cfg(feature = "parallelization")]
+fn acquire_user_lines(parser: &Parser) -> UserLines {
+    let mut user_lines = UserLines::new();
+    let arguments: Vec<String> = args().skip(1).collect();
+    let (tx, rx) = channel::<(User, Lines)>();
+    arguments.par_iter().for_each(|file_name| {
+        let tx = tx.clone();
+        for entry in blame(file_name.as_str(), parser).unwrap_or_else(|e| {
+            eprintln!("W: failed blaming {file_name} due to {e}");
+            UserLines::new()
+        }) {
+            tx.send(entry).unwrap_or_else(|e| {
+                eprintln!("W: failed sending data due to {e}");
+            });
+        }
+    });
+    drop(tx);
+    while let Ok((user, lines)) = rx.recv() {
+        *user_lines.entry(user).or_default() += lines;
     }
+    user_lines
+}
+
+fn main() {
+    println!("Changed lines:");
+    let parser = Parser::new();
+    let user_lines: UserLines = acquire_user_lines(&parser);
     let mut users_and_lines: Vec<_> = user_lines.into_iter().collect();
     // Sort the users by number of lines change, descending.
     users_and_lines.sort_by_key(|(_, lines)| Reverse(*lines));
