@@ -70,6 +70,7 @@ fn blame(file_name: &str, parser: &Parser) -> Result<UserLines, io::Error> {
     let blame_result = Command::new("git")
         .arg("blame")
         .arg("--porcelain")
+        .arg("--incremental")
         .arg("--")
         .arg(file_name)
         .output()?
